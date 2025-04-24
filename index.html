@@ -1,0 +1,298 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PowerShell Case Variation Tool</title>
+    <style>
+        body {
+            background-color: #0a0a0a;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
+            position: relative;
+        }
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            opacity: 0.3;
+        }
+        .container {
+            background: rgba(26, 26, 26, 0.9);
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            width: 63.75%;
+            max-width: 750px;
+            min-height: 60vh;
+            border: 1px solid #00ff00;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        h1 {
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 1.5rem;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        input[type="text"] {
+            width: calc(100% - 2rem); /* Adjusted to fit container with padding */
+            background: #000;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 1rem;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+            outline: none;
+            transition: box-shadow 0.3s;
+            box-sizing: border-box; /* Ensures padding is included in width */
+        }
+        input[type="text"]:focus {
+            box-shadow: 0 0 10px #00ff00;
+        }
+        .button-container {
+            display: flex;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.3s;
+            font-family: 'Courier New', monospace;
+        }
+        button:hover {
+            background: #00cc00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+        button.clear {
+            background: #ff0000;
+        }
+        button.clear:hover {
+            background: #cc0000;
+            box-shadow: 0 0 10px #ff0000;
+        }
+        .output {
+            background: #000;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            padding: 1rem;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            flex-grow: 1;
+        }
+        .output::-webkit-scrollbar {
+            width: 8px;
+        }
+        .output::-webkit-scrollbar-track {
+            background: #000;
+        }
+        .output::-webkit-scrollbar-thumb {
+            background: #00ff00;
+            border-radius: 4px;
+        }
+        footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.8rem;
+            color: #00cc00;
+            text-shadow: 0 0 5px #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="matrix"></canvas>
+    <div class="container">
+        <h1>PowerShell Case Mutator</h1>
+        <input type="text" id="input" placeholder="Enter your PowerShell command..." onkeypress="return (event.key !== 'Enter')">
+        <div class="button-container">
+            <button onclick="generateVariations()">Generate Case Variations</button>
+            <button class="clear" onclick="clearInput()">Clear</button>
+        </div>
+        <div class="output" id="output"></div>
+        <footer>
+            © Xservus Limited, Version 0.1, Created by mrr3b00t
+        </footer>
+    </div>
+
+    <script>
+        // Matrix effect
+        const canvas = document.getElementById('matrix');
+        const ctx = canvas.getContext('2d');
+
+        canvas.height = window.innerHeight;
+        canvas.width = window.innerWidth;
+
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-=[]{}|;:,.<>?';
+        const fontSize = 14;
+        const columns = canvas.width / fontSize;
+        const drops = [];
+
+        for (let x = 0; x < columns; x++) {
+            drops[x] = 1;
+        }
+
+        function draw() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#00ff00';
+            ctx.font = fontSize + 'px monospace';
+
+            for (let i = 0; i < drops.length; i++) {
+                const text = chars.charAt(Math.floor(Math.random() * chars.length));
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                drops[i]++;
+            }
+        }
+
+        setInterval(draw, 33);
+
+        // Resize canvas on window resize
+        window.addEventListener('resize', () => {
+            canvas.height = window.innerHeight;
+            canvas.width = window.innerWidth;
+        });
+
+        // Case variation logic
+        function generateCaseVariations(str) {
+            const variations = new Set();
+
+            function permute(current, index, original) {
+                if (index === original.length) {
+                    variations.add(current);
+                    return;
+                }
+
+                const char = original[index];
+                if (/[a-zA-Z]/.test(char)) {
+                    permute(current + char.toLowerCase(), index + 1, original);
+                    permute(current + char.toUpperCase(), index + 1, original);
+                } else {
+                    permute(current + char, index + 1, original);
+                }
+            }
+
+            permute('', 0, str);
+            return Array.from(variations);
+        }
+
+        function generateVariations() {
+            const input = document.getElementById('input').value.trim();
+            const outputDiv = document.getElementById('output');
+
+            if (!input) {
+                outputDiv.textContent = 'Please enter a PowerShell command.';
+                return;
+            }
+
+            try {
+                // Split input into words/tokens while preserving PowerShell syntax
+                const tokens = input.match(/(?:[^\s"']+|"[^"]*"|'[^']*')/g) || [input];
+                const allVariations = [];
+
+                // Generate case variations for each token
+                tokens.forEach(token => {
+                    // Skip quoted strings to preserve syntax
+                    if (token.startsWith('"') || token.startsWith("'")) {
+                        allVariations.push([token]);
+                    } else {
+                        // Remove PowerShell-specific characters for case variation
+                        const cleanToken = token.replace(/[\$\@\%\{\}\[\]\(\)]/g, '');
+                        if (cleanToken) {
+                            const variations = generateCaseVariations(cleanToken);
+                            // Reattach PowerShell-specific characters
+                            allVariations.push(variations.map(v => token.replace(cleanToken, v)));
+                        } else {
+                            allVariations.push([token]);
+                        }
+                    }
+                });
+
+                // Generate all combinations of token variations
+                const combinations = allVariations.reduce((acc, curr) => {
+                    const result = [];
+                    acc.forEach(a => {
+                        curr.forEach(c => {
+                            result.push(`${a} ${c}`);
+                        });
+                    });
+                    return result;
+                }, ['']);
+
+                // Display results
+                outputDiv.textContent = combinations.join('\n').trim();
+            } catch (error) {
+                outputDiv.textContent = 'Error processing input. Please ensure valid PowerShell syntax.';
+            }
+        }
+
+        function clearInput() {
+            document.getElementById('input').value = '';
+            document.getElementById('output').textContent = '';
+        }
+    </script>
+</body>
+</html>
